@@ -2,7 +2,10 @@ package com.akjaw.fullerstack.screens.noteslist
 
 import base.usecase.Either
 import base.usecase.Failure
+import com.akjaw.fullerstack.model.ParcelableNote
+import com.akjaw.fullerstack.model.ParcelableNoteMapper
 import com.akjaw.fullerstack.screens.common.ScreenNavigator
+import data.Mapper
 import data.Note
 import feature.noteslist.FetchNotes
 import io.mockk.coEvery
@@ -34,6 +37,7 @@ internal class NotesListControllerTest {
     private val viewMvc: NotesListViewMvc = mockk {
         every { showLoading() } answers {}
         every { hideLoading() } answers {}
+        every { setNotes(any()) } answers {}
         every { registerListener(any()) } answers {}
         every { unregisterListener(any()) } answers {}
     }
@@ -41,11 +45,12 @@ internal class NotesListControllerTest {
         every { openAddNoteScreen() } answers {}
     }
     private val fetchNotes: FetchNotes = mockk()
+    private val mapper: Mapper<ParcelableNote, Note> = ParcelableNoteMapper()
     private lateinit var SUT: NotesListController
 
     @BeforeEach
     fun setUp(){
-        SUT = NotesListController(screenNavigator, fetchNotes)
+        SUT = NotesListController(screenNavigator, fetchNotes, mapper)
         SUT.bindView(viewMvc, testScope)
         testDispatcher.cleanupTestCoroutines()
     }
@@ -59,10 +64,10 @@ internal class NotesListControllerTest {
         }
     }
 
-    @Test
-    fun `onNoteClicked open the edit note screen`(){
-        SUT.onNoteClicked("TODO")
-    }
+//    @Test
+//    fun `onNoteClicked open the edit note screen`(){
+//        SUT.onNoteClicked("TODO")
+//    }
 
     @Nested
     inner class OnStartTest{
@@ -129,6 +134,41 @@ internal class NotesListControllerTest {
             verify {
                 viewMvc.unregisterListener(SUT)
             }
+        }
+    }
+
+    @Nested
+    inner class StateRestorationTest {
+
+        @Test
+        fun `Restoring a saved notes prevents the notes from being fetched again`(){
+            val savedState = createSavedState()
+            SUT.restoreSavedState(savedState)
+
+            SUT.onStart()
+
+            coVerify(exactly = 0) {
+                fetchNotes.executeAsync(any(), any())
+            }
+        }
+
+        @Test
+        fun `The restored notes are shown in the view`(){
+            val savedState = createSavedState()
+            SUT.restoreSavedState(savedState)
+
+            SUT.onStart()
+
+            verify {
+                viewMvc.setNotes(NOTES)
+            }
+        }
+
+        private fun createSavedState(): NotesListController.SavedState {
+            val parcelableNotes = NOTES.map { mapper.mapTo(it) }
+            val notesListState = NotesListController.NotesListState.ShowingList(parcelableNotes)
+            val savedState = NotesListController.SavedState(notesListState)
+            return savedState
         }
     }
 

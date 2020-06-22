@@ -1,10 +1,14 @@
 package com.akjaw.fullerstack.screens.noteslist
 
+import android.os.Parcelable
 import base.usecase.Either
 import base.usecase.UseCaseAsync
+import com.akjaw.fullerstack.model.ParcelableNote
 import com.akjaw.fullerstack.screens.common.ScreenNavigator
+import data.Mapper
 import data.Note
 import feature.noteslist.FetchNotes
+import kotlinx.android.parcel.Parcelize
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
@@ -12,17 +16,22 @@ import kotlinx.coroutines.launch
 
 class NotesListController(
     private val screenNavigator: ScreenNavigator,
-    private val fetchNotes: FetchNotes
+    private val fetchNotes: FetchNotes,
+    private val parcelableNoteMapper: Mapper<ParcelableNote, Note>
 ) : NotesListViewMvc.Listener {
 
-    private sealed class NotesListState {
+    internal sealed class NotesListState: Parcelable {
+        @Parcelize
         object Uninitialized: NotesListState()
-        object Idle: NotesListState() //Maybe showing list?
+
+        @Parcelize
+        class ShowingList(val notes: List<ParcelableNote>): NotesListState()
     }
 
     private lateinit var viewMvc: NotesListViewMvc
     private lateinit var scope: CoroutineScope
-    private var currentState: NotesListState = NotesListState.Uninitialized
+    internal var currentState: NotesListState = NotesListState.Uninitialized
+        private set
 
     fun bindView(
         viewMvc: NotesListViewMvc,
@@ -34,8 +43,15 @@ class NotesListController(
 
     fun onStart() {
         viewMvc.registerListener(this)
-        if(currentState is NotesListState.Uninitialized){
-            initializeNotes()
+        val currentState = this.currentState
+        when (currentState) {
+            is NotesListState.Uninitialized -> {
+                initializeNotes()
+            }
+            is NotesListState.ShowingList -> {
+                val notes = currentState.notes.map { parcelableNoteMapper.mapFrom(it) }
+                viewMvc.setNotes(notes)
+            }
         }
     }
 
@@ -43,7 +59,6 @@ class NotesListController(
         viewMvc.showLoading()
         scope.launch {
             fetchNotes.executeAsync(UseCaseAsync.None()) { result ->
-                currentState = NotesListState.Idle
                 viewMvc.hideLoading()
                 when (result) {
                     is Either.Left -> viewMvc.showError() //TODO more elaborate
@@ -56,6 +71,8 @@ class NotesListController(
     private fun listenToNoteChanges(notesFlow: Flow<List<Note>>) {
         scope.launch {
             notesFlow.collect { notes ->
+                val parcelableNotes = notes.map { parcelableNoteMapper.mapTo(it) }
+                currentState = NotesListState.ShowingList(parcelableNotes)
                 viewMvc.setNotes(notes)
             }
         }
@@ -72,5 +89,14 @@ class NotesListController(
     override fun onAddNoteClicked() {
         screenNavigator.openAddNoteScreen()
     }
+
+    internal fun getSavedState(): SavedState = SavedState(currentState)
+
+    internal fun restoreSavedState(savedState: SavedState) {
+        currentState = savedState.notesListState
+    }
+
+    @Parcelize
+    internal data class SavedState(val notesListState: NotesListState): Parcelable
 
 }

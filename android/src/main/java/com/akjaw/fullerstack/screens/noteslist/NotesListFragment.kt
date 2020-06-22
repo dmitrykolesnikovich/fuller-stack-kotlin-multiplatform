@@ -11,12 +11,30 @@ import org.kodein.di.instance
 
 class NotesListFragment : BaseFragment() {
 
+    companion object {
+        private const val SAVED_INSTANCE = "SAVED_INSTANCE"
+    }
+
     private val viewMvcFactory: ViewMvcFactory by instance<ViewMvcFactory>()
     private val notesListController: NotesListController by instance<NotesListController>()
     private lateinit var viewMvc: NotesListViewMvc
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+
+        outState.putParcelable(SAVED_INSTANCE, notesListController.getSavedState())
+    }
+
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
         viewMvc = viewMvcFactory.getNotesListViewMvc(container)
+
+        val savedState = savedInstanceState
+            ?.getParcelable<NotesListController.SavedState>(SAVED_INSTANCE)
+
+        if(savedState != null){
+            notesListController.restoreSavedState(savedState)
+        }
+
         notesListController.bindView(viewMvc, lifecycleScope)
         return viewMvc.rootView
     }
